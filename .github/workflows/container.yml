@@ -23,6 +23,11 @@ jobs:
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Checkout upstream at the pinned tag
         uses: actions/checkout@v4
         with:
