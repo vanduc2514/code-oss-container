@@ -229,12 +229,13 @@ jobs:
           test "$code" = "200" || { docker logs smoke; exit 1; }
 
           check() {
-            local path="$1" want_type="$2" want_size="$3" out
-            out="$(curl -sS -o /dev/null -w '%{http_code} %{content_type} %{size_download}' "http://127.0.0.1:8080$path")"
-            echo "$path -> $out"
-            echo "$out" | grep -q "^200" || return 1
-            echo "$out" | grep -qi "$want_type" || return 1
-            [ -z "$want_size" ] || [ "$(echo "$out" | awk '{print $3}')" -ge "$want_size" ] || return 1
+            local path="$1" want_type="$2" want_size="$3" out code ctype size
+            out="$(curl -sS -o /dev/null -w '%{http_code}|%{content_type}|%{size_download}' "http://127.0.0.1:8080$path")"
+            code="${out%%|*}"; out="${out#*|}"; ctype="${out%%|*}"; size="${out##*|}"
+            printf '%s -> %s %s %s bytes\n' "$path" "$code" "$ctype" "$size"
+            [ "$code" = "200" ] || return 1
+            printf '%s' "$ctype" | grep -qi "$want_type" || return 1
+            [ -z "$want_size" ] || [ "$size" -ge "$want_size" ] || return 1
           }
           check / text/html 4000
           check /agents text/html 4000
