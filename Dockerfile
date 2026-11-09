@@ -6,16 +6,16 @@ FROM nginx:alpine
 COPY vscode-web/ /usr/share/nginx/html/
 
 # Authored shells (the upstream `web` target emits no HTML) and runtime config.
-COPY docker/index.html /usr/share/nginx/html/index.html
-COPY docker/agents.html /usr/share/nginx/html/agents.html
-COPY docker/config.json /usr/share/nginx/html/config.json
+COPY index.html /usr/share/nginx/html/index.html
+COPY agents.html /usr/share/nginx/html/agents.html
+COPY config.json /usr/share/nginx/html/config.json
 
 # MIT attribution for the redistributed Code - OSS build.
 COPY LICENSE.txt /usr/share/nginx/html/LICENSE.txt
 COPY ThirdPartyNotices.txt /usr/share/nginx/html/ThirdPartyNotices.txt
 
 # Processed by /docker-entrypoint.d/20-envsubst-on-templates.sh at startup.
-COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
 EXPOSE 80
 

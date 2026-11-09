@@ -150,7 +150,7 @@ jobs:
           rm -rf .build-container
           mkdir -p .build-container
           mv vscode-web .build-container/vscode-web
-          cp -R docker .build-container/docker
+          cp Dockerfile nginx.conf.template index.html agents.html config.json .build-container/
           cp vscode/LICENSE.txt vscode/ThirdPartyNotices.txt .build-container/
 
       - name: Reclaim build disk space
@@ -176,7 +176,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .build-container
-          file: .build-container/docker/Dockerfile
+          file: .build-container/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
