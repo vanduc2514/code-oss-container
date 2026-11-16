@@ -10,48 +10,49 @@ permissions:
   packages: write
 
 env:
-  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-  VSCODE_TAG: '1.145.2'
-  VSCODE_COMMIT: 'c4453f8ea430795f941c1b2ff6c9321135a74a02'
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
-    outputs:
-      digest: ${{ steps.push.outputs.digest }}
+    timeout-minutes: 10
     steps:
       - name: Checkout this repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Checkout upstream at the pinned tag
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: code-oss/build/nginx-routes/go.mod
+
+      - name: Test the route generator
+        working-directory: code-oss/build/nginx-routes
+        run: go test ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      tag: ${{ steps.versions.outputs.tag }}
+    steps:
+      - name: Checkout this repository
         uses: actions/checkout@v4
         with:
-          repository: microsoft/vscode
-          ref: ${{ env.VSCODE_TAG }}
-          path: vscode
           fetch-depth: 1
-          persist-credentials: false
 
-      - name: Verify pinned, unmodified upstream tree
-        working-directory: vscode
+      - name: Read pinned upstream version
+        id: versions
         run: |
           set -euo pipefail
-          actual="$(git rev-parse HEAD)"
-          echo "HEAD $actual"
-          if [ "$actual" != "$VSCODE_COMMIT" ]; then
-            echo "::error::checked out $actual, expected $VSCODE_COMMIT"
-            exit 1
-          fi
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::upstream tree was modified"
-            git status --porcelain
-            exit 1
-          fi
+          tag="$(sed -n 's/^ARG VSCODE_TAG=//p' code-oss/Dockerfile | head -n 1)"
+          commit="$(sed -n 's/^ARG VSCODE_COMMIT=//p' code-oss/Dockerfile | head -n 1)"
+          test -n "$tag" && test -n "$commit"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
       - name: Free disk space
         run: |
@@ -60,106 +61,6 @@ jobs:
           sudo apt-get clean
           docker system prune -af
           df -h /
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: vscode/.nvmrc
-          cache: npm
-          cache-dependency-path: vscode/package-lock.json
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libkrb5-dev
-
-      - name: Restore vscode-web build
-        id: cache-web
-        uses: actions/cache/restore@v4
-        with:
-          path: vscode-web
-          key: vscode-web-${{ env.VSCODE_TAG }}-${{ env.VSCODE_COMMIT }}-v1
-
-      - name: Install dependencies
-        if: steps.cache-web.outputs.cache-hit != 'true'
-        working-directory: vscode
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Ubuntu 22.04 ships GCC 11.4, which cannot parse the Electron 43 V8
-          # headers when USING_V8_SHARED and the V8 deprecation-warning macros
-          # are both defined. Undefining them only silences deprecated-API
-          # warnings in native module builds; no upstream file is altered.
-          CFLAGS: '-UV8_DEPRECATION_WARNINGS -UV8_IMMINENT_DEPRECATION_WARNINGS'
-          CXXFLAGS: '-UV8_DEPRECATION_WARNINGS -UV8_IMMINENT_DEPRECATION_WARNINGS'
-        run: |
-          for attempt in 1 2 3 4 5; do
-            npm ci && break
-            if [ "$attempt" = "5" ]; then
-              echo "::error::npm ci failed after 5 attempts"
-              exit 1
-            fi
-            sleep 15
-          done
-
-      - name: Compile core
-        if: steps.cache-web.outputs.cache-hit != 'true'
-        working-directory: vscode
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run gulp core-ci
-
-      - name: Build web bundle
-        if: steps.cache-web.outputs.cache-hit != 'true'
-        working-directory: vscode
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run gulp vscode-web-min-ci
-
-      - name: Save vscode-web build
-        if: steps.cache-web.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: vscode-web
-          key: vscode-web-${{ env.VSCODE_TAG }}-${{ env.VSCODE_COMMIT }}-v1
-
-      - name: Verify required bundles
-        run: |
-          set -euo pipefail
-          for path in \
-            out/vs/workbench/workbench.web.main.internal.js \
-            out/vs/workbench/workbench.web.main.internal.css \
-            out/vs/sessions/sessions.web.main.internal.js \
-            out/vs/sessions/sessions.web.main.internal.css \
-            out/nls.messages.js \
-            extensions/theme-defaults/package.json \
-            extensions/theme-seti/package.json; do
-            if [ ! -f "vscode-web/$path" ]; then
-              echo "::error::missing required artifact: vscode-web/$path"
-              exit 1
-            fi
-          done
-          stat -c '%n %s bytes' \
-            vscode-web/out/vs/workbench/workbench.web.main.internal.js \
-            vscode-web/out/vs/workbench/workbench.web.main.internal.css \
-            vscode-web/out/vs/sessions/sessions.web.main.internal.js \
-            vscode-web/out/vs/sessions/sessions.web.main.internal.css
-
-      - name: Stage container build context
-        run: |
-          set -euo pipefail
-          rm -rf .build-container
-          mkdir -p .build-container
-          mv vscode-web .build-container/vscode-web
-          cp Dockerfile nginx.conf.template index.html agents.html config.json .build-container/
-          cp vscode/LICENSE.txt vscode/ThirdPartyNotices.txt .build-container/
-
-      - name: Reclaim build disk space
-        run: |
-          rm -rf vscode
-          df -h /
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -175,20 +76,25 @@ jobs:
         id: push
         uses: docker/build-push-action@v6
         with:
-          context: .build-container
-          file: .build-container/Dockerfile
+          context: code-oss
+          file: code-oss/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VSCODE_TAG=${{ steps.versions.outputs.tag }}
+            VSCODE_COMMIT=${{ steps.versions.outputs.commit }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
-            ${{ env.IMAGE }}:${{ env.VSCODE_TAG }}
+            ${{ env.IMAGE }}:${{ steps.versions.outputs.tag }}
             ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ env.VSCODE_COMMIT }}
+            ${{ env.IMAGE }}:${{ steps.versions.outputs.commit }}
           labels: |
             org.opencontainers.image.title=Code - OSS web
             org.opencontainers.image.description=Self-hosted Code - OSS web IDE and Agents Window
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.version=${{ env.VSCODE_TAG }}
-            org.opencontainers.image.revision=${{ env.VSCODE_COMMIT }}
+            org.opencontainers.image.version=${{ steps.versions.outputs.tag }}
+            org.opencontainers.image.revision=${{ steps.versions.outputs.commit }}
             org.opencontainers.image.licenses=MIT
 
       - name: Report image digest
@@ -197,7 +103,7 @@ jobs:
           {
             echo "### Image"
             echo ""
-            echo "\`${{ env.IMAGE }}:${{ env.VSCODE_TAG }}\`"
+            echo "\`${{ env.IMAGE }}:${{ steps.versions.outputs.tag }}\`"
             echo ""
             echo "\`${{ env.IMAGE }}@${{ steps.push.outputs.digest }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -206,6 +112,8 @@ jobs:
     needs: build
     runs-on: ubuntu-22.04
     timeout-minutes: 20
+    env:
+      VSCODE_TAG: ${{ needs.build.outputs.tag }}
     steps:
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -220,7 +128,18 @@ jobs:
       - name: Run and probe
         run: |
           set -euo pipefail
-          docker run -d --name smoke -p 8080:80 "$IMAGE:$VSCODE_TAG"
+          # Direct (browser-dialled) host only: no proxy route, so the container
+          # needs no reachable backend to start.
+          cat > smoke-config.json <<'JSON'
+          {
+            "remoteAgentHosts": [
+              { "name": "smoke", "address": "wss://example.invalid/ahp" }
+            ]
+          }
+          JSON
+          docker run -d --name smoke -p 8080:80 \
+            -v "$PWD/smoke-config.json:/usr/share/nginx/html/config.json:ro" \
+            "$IMAGE:$VSCODE_TAG"
           for i in $(seq 1 40); do
             code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/healthz || true)"
             [ "$code" = "200" ] && break
@@ -239,11 +158,29 @@ jobs:
           }
           check / text/html 4000
           check /agents text/html 4000
+          check /index.js application/javascript 1000
+          check /agents.js application/javascript 1000
+          check /shell.js application/javascript 500
+          check /version.js application/javascript 40
           check /config.json application/json 10
           check /out/vs/workbench/workbench.web.main.internal.js application/javascript 10000000
           check /out/vs/sessions/sessions.web.main.internal.js application/javascript 10000000
           check /out/nls.messages.js application/javascript 100000
           check /extensions/theme-defaults/package.json application/json 100
+
+          echo "=== unconfigured /ahp is not the workbench ==="
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/ahp)"
+          printf '/ahp -> %s\n' "$code"
+          [ "$code" = "404" ]
+
+          echo "=== product.json patch reached the bundles ==="
+          for js in /out/vs/workbench/workbench.web.main.internal.js /out/vs/sessions/sessions.web.main.internal.js; do
+            if curl -sS "http://127.0.0.1:8080$js" | grep -qE 'falcon-caas\.mai\.microsoft\.com|api\.github\.com/copilot_internal'; then
+              echo "::error::$js still contains an internal Microsoft endpoint"
+              exit 1
+            fi
+            printf '%s -> patched\n' "$js"
+          done
 
           echo "=== no Microsoft service references in served HTML ==="
           if curl -sS http://127.0.0.1:8080/ http://127.0.0.1:8080/agents \

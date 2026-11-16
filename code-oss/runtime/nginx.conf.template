@@ -43,6 +43,8 @@ server {
 		text/css
 		text/plain;
 
+	# A location with any add_header drops the server-level ones, so every
+	# location below repeats these alongside its own headers.
 	add_header X-Content-Type-Options nosniff always;
 	add_header Referrer-Policy no-referrer always;
 
@@ -55,12 +57,14 @@ server {
 	location = /config.json {
 		add_header Cache-Control "no-store" always;
 		add_header X-Content-Type-Options nosniff always;
+		add_header Referrer-Policy no-referrer always;
 		try_files $uri =404;
 	}
 
 	location = /agents {
 		add_header Cache-Control "no-cache" always;
 		add_header X-Content-Type-Options nosniff always;
+		add_header Referrer-Policy no-referrer always;
 		try_files /agents.html =404;
 	}
 
@@ -68,21 +72,36 @@ server {
 		return 308 /agents;
 	}
 
+	# Agent-host proxy routes, generated at container start from the
+	# remoteAgentHosts entries that declare an "upstream". One exact-match
+	# location per host, so the browser only ever reaches this origin and
+	# nginx makes the hop into the private network.
+	include /etc/nginx/ahp/*.conf;
+
+	# Prefix fallback: exact routes above win, so an unconfigured /ahp path
+	# fails loudly instead of returning the workbench HTML.
+	location /ahp {
+		return 404;
+	}
+
 	location /out/ {
 		add_header Cache-Control "public, max-age=31536000, immutable" always;
 		add_header X-Content-Type-Options nosniff always;
+		add_header Referrer-Policy no-referrer always;
 		try_files $uri =404;
 	}
 
 	location /extensions/ {
 		add_header Cache-Control "public, max-age=31536000, immutable" always;
 		add_header X-Content-Type-Options nosniff always;
+		add_header Referrer-Policy no-referrer always;
 		try_files $uri =404;
 	}
 
 	location / {
 		add_header Cache-Control "no-cache" always;
 		add_header X-Content-Type-Options nosniff always;
+		add_header Referrer-Policy no-referrer always;
 		try_files $uri $uri/ /index.html;
 	}
 }
