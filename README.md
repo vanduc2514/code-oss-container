@@ -286,12 +286,19 @@ builds.
 A `test` job runs `go test ./...` for the route helper with the Go version from
 its `go.mod`, and the image build waits for it.
 
-The workflow builds and pushes the multi-arch image directly from `code-oss/`
-with Docker Buildx, passing the pinned version as build args and caching the
-build stage in GitHub Actions. A `smoke` job pulls the pushed image and asserts
-the served pages, bundle sizes, content types, `/healthz`, attribution files,
-and the absence of any `microsoft.com`, `vscode.dev`, `vscode-cdn.net`,
-`marketplace.visualstudio.com` or `aka.ms` reference.
+The `build` job reads the pin from the Dockerfile, frees runner disk, then
+builds and pushes the multi-arch image with `docker/build-push-action`, taking
+tags and OCI labels from `docker/metadata-action` and caching the build stage in
+GitHub Actions.
+
+The workflow does not run the image. Verify a build before relying on it:
+
+```bash
+docker run --rm -d --name code-oss -p 9000:80 \
+  -v "$PWD/config.json:/usr/share/nginx/html/config.json:ro" \
+  ghcr.io/vanduc2514/code-oss-container:1.145.2
+curl -fsS http://127.0.0.1:9000/healthz
+```
 
 ## Licensing and trademarks
 
