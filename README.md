@@ -48,7 +48,12 @@ session fails only when it reaches a model. To use them, copy `.env.example` to
 ```dotenv
 DEEPSEEK_API_KEY=sk-...
 COPILOT_GITHUB_TOKEN=github_pat_...
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
 ```
+
+Each agent reads its own variable. Leave one empty and that agent starts but
+cannot reach a model until you set a key or store a login.
 
 The gateway and the browser share a token so the browser can authenticate. The
 example uses `example-token-change-me`, which lives in `gateway.example.json` and
@@ -108,7 +113,8 @@ docker compose up -d gateway
 
 Each provider entry says what to run, in which directory, with which environment
 and timeouts. The example enables GitHub Copilot, two Copilot sessions pointed at
-DeepSeek, pi, and Antigravity. Adding a model to Copilot means copying a BYOK
+DeepSeek, pi, Claude, Codex, and Antigravity. Adding a model to Copilot means
+copying a BYOK
 entry and changing the base URL, model, and key command. Adding a different agent
 means adding an entry whose command names a binary installed in the `agents`
 volume. Disabled entries at the bottom of the file are the gateway's built-in
@@ -122,11 +128,12 @@ docker compose exec gateway \
   ahp-acp-gateway --config /etc/ahp/gateway.json --print-config
 ```
 
-The init service installs pinned versions of `pi-acp`, `pi`, and the Copilot CLI.
-Versions come from `.env`. Antigravity is the exception: its CLI is a native
-binary from Google, not an npm package, so put a Linux build on the host and set
-`AGY_BIN` to its path. Without it the service logs that Antigravity is
-unavailable and everything else still works.
+The init service installs pinned versions of `pi-acp`, `pi`, the Copilot CLI,
+`claude-agent-acp`, and `codex-acp`. Versions come from `.env`, one variable per
+agent, so changing a version is an edit and a restart. Antigravity is the
+exception: its CLI is a native binary from Google, not an npm package, so put a
+Linux build on the host and set `AGY_BIN` to its path. Without it the service
+logs that Antigravity is unavailable and everything else still works.
 
 Logins persist in volumes. If you prefer an interactive login over an API token:
 

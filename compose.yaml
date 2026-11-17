@@ -17,6 +17,8 @@ services:
       PI_ACP_VERSION: ${PI_ACP_VERSION:-0.0.34}
       PI_VERSION: ${PI_VERSION:-1.5.0}
       COPILOT_VERSION: ${COPILOT_VERSION:-1.0.107}
+      CLAUDE_ACP_VERSION: ${CLAUDE_ACP_VERSION:-0.107.3}
+      CODEX_ACP_VERSION: ${CODEX_ACP_VERSION:-2.7.0}
       AGY_VERSION: ${AGY_VERSION:-1.5.3}
     volumes:
       - agents:/opt/agents
@@ -26,7 +28,7 @@ services:
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        want="pi-acp@$$PI_ACP_VERSION pi@$$PI_VERSION copilot@$$COPILOT_VERSION agy@$$AGY_VERSION"
+        want="pi-acp@$$PI_ACP_VERSION pi@$$PI_VERSION copilot@$$COPILOT_VERSION claude@$$CLAUDE_ACP_VERSION codex@$$CODEX_ACP_VERSION agy@$$AGY_VERSION"
         marker=/opt/agents/.installed
         if [ -f "$$marker" ] && [ "$$(cat "$$marker")" = "$$want" ]; then
           echo "[agents] up to date: $$want"
@@ -36,7 +38,9 @@ services:
             --cache /opt/agents/.npm-cache \
             "pi-acp@$$PI_ACP_VERSION" \
             "@earendil-works/pi-coding-agent@$$PI_VERSION" \
-            "@github/copilot@$$COPILOT_VERSION"
+            "@github/copilot@$$COPILOT_VERSION" \
+            "@agentclientprotocol/claude-agent-acp@$$CLAUDE_ACP_VERSION" \
+            "@agentclientprotocol/codex-acp@$$CODEX_ACP_VERSION"
           if [ -f /opt/agy-source ]; then
             install -m 0755 /opt/agy-source /opt/agents/bin/agy
             if /opt/agents/bin/agy --version >/dev/null 2>&1; then
@@ -69,6 +73,8 @@ services:
       # is set or a login is stored.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       COPILOT_GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     volumes:
       # Native gateway configuration. Copy gateway.example.json, edit
       # it, then point AHP_GATEWAY_CONFIG at your copy.

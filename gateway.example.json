@@ -103,12 +103,20 @@
       "cwd": "/workspace",
       "startupTimeoutMs": 120000,
       "requestTimeoutMs": 1800000,
-      "installHint": "Provide the agy binary through AGY_BIN so the init service installs it.",
+      "installHint": "Native Google binary, not an npm package: set AGY_BIN to a Linux build so the init service copies it.",
       "authHint": "Sign in with the Antigravity CLI once; its state lives in the pi-home volume."
     },
     {
       "id": "claude",
-      "enabled": false
+      "enabled": true,
+      "displayName": "Claude",
+      "description": "Anthropic Claude Agent SDK over ACP. Reads ANTHROPIC_API_KEY from the environment.",
+      "command": "claude-agent-acp",
+      "args": [],
+      "cwd": "/workspace",
+      "startupTimeoutMs": 120000,
+      "installHint": "Installed by the agents init service; set CLAUDE_ACP_VERSION to change it.",
+      "authHint": "Set ANTHROPIC_API_KEY in .env."
     },
     {
       "id": "gemini",
@@ -128,7 +136,15 @@
     },
     {
       "id": "codex",
-      "enabled": false
+      "enabled": true,
+      "displayName": "Codex",
+      "description": "OpenAI Codex CLI over ACP. Reads OPENAI_API_KEY from the environment.",
+      "command": "codex-acp",
+      "args": [],
+      "cwd": "/workspace",
+      "startupTimeoutMs": 120000,
+      "installHint": "Installed by the agents init service; set CODEX_ACP_VERSION to change it.",
+      "authHint": "Set OPENAI_API_KEY in .env, or run codex login once."
     },
     {
       "id": "opencode",
