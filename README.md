@@ -55,16 +55,6 @@ OPENAI_API_KEY=sk-...
 Each agent reads its own variable. Leave one empty and that agent starts but
 cannot reach a model until you set a key or store a login.
 
-Credentials can also live as files instead of `.env` values. Put one file per
-secret in `secrets/` and leave the matching variable empty; the container exports
-it from the file at startup, and a value in `.env` wins when both are set.
-`secrets/README.md` lists the file names, and the directory is ignored except for
-that document.
-
-Antigravity is the one agent that uses a token file rather than an API key. Copy
-the file its CLI writes on login (`~/.gemini/antigravity-cli/antigravity-oauth-token`)
-into `secrets/antigravity-oauth-token`; the mount is writable so it can refresh.
-
 The gateway and the browser share a token so the browser can authenticate. The
 example uses `example-token-change-me`, which lives in `gateway.example.json` and
 `agent-hosts.example.json`. Change both together before the stack is reachable

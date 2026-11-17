@@ -2,6 +2,4 @@
 .env
 /config.json
 /gateway.json
-/secrets/*
-!/secrets/README.md
 .DS_Store
