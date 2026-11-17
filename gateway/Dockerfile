@@ -25,7 +25,9 @@ RUN npm install --global --no-audit --no-fund "ahp-acp-gateway@${GATEWAY_VERSION
 # them inherit the right ownership on first use.
 RUN mkdir -p /data /workspace /etc/ahp \
       /home/node/.copilot /home/node/.pi \
- && chown -R node:node /data /workspace /home/node/.copilot /home/node/.pi
+      /home/node/.gemini/antigravity-cli \
+ && chown -R node:node /data /workspace /home/node/.copilot /home/node/.pi \
+      /home/node/.gemini
 
 COPY --chmod=755 entrypoint.sh /usr/local/bin/ahp-entrypoint
 

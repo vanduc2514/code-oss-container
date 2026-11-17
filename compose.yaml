@@ -71,16 +71,24 @@ services:
       # can stay here instead of in the file. Empty is allowed: the gateway
       # starts, but pi and the BYOK providers cannot reach a model until a key
       # is set or a login is stored.
+      # Values here win; empty falls back to the matching file in
+      # /run/secrets, which is mounted below.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       COPILOT_GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AHP_SECRETS_DIR: /run/secrets
     volumes:
       # Native gateway configuration. Copy gateway.example.json, edit
       # it, then point AHP_GATEWAY_CONFIG at your copy.
       - ${AHP_GATEWAY_CONFIG:-./gateway.example.json}:/etc/ahp/gateway.json:ro
       - gateway-data:/data
       - gateway-workspace:/workspace
+      # Credential files. One file per secret; see secrets/README.md.
+      - ./secrets:/run/secrets:ro
+      # Antigravity keeps an OAuth token file rather than an API key. The
+      # directory stays writable so the token can refresh in place.
+      - ./secrets/antigravity-oauth-token:/home/node/.gemini/antigravity-cli/antigravity-oauth-token
       # Agents installed by the init service; mounted read-only here.
       - agents:/opt/agents:ro
       - copilot-auth:/home/node/.copilot
