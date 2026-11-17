@@ -52,11 +52,13 @@ services:
         ls /opt/agents/node_modules/.bin | tr '\n' ' '; echo
 
   gateway:
+    # Pulls the published image, or builds it locally when the image is absent
+    # or `docker compose up --build` is used.
     build:
       context: ./gateway
       args:
         GATEWAY_VERSION: ${AHP_GATEWAY_VERSION:-0.2.2}
-    image: ahp-stack-gateway:${AHP_GATEWAY_VERSION:-0.2.2}
+    image: ${GATEWAY_IMAGE:-ghcr.io/vanduc2514/ahp-gateway:${AHP_GATEWAY_VERSION:-0.2.2}}
     restart: unless-stopped
     stop_grace_period: 15s
     environment:

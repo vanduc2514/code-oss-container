@@ -18,13 +18,29 @@ for the Agents Window. The first run builds the gateway image, installs pi and
 GitHub Copilot into a volume, and starts the stack. Ports 9000 and 8765 must be
 free.
 
-The UI comes from `ghcr.io/vanduc2514/code-oss-container`. To build it yourself
-instead:
+Both images are published: `ghcr.io/vanduc2514/code-oss-container` for the
+editor and `ghcr.io/vanduc2514/ahp-gateway` for the gateway. On a homelab or any
+fresh host, pull them before starting:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+If the gateway package is still private, log in first with a token that can read
+packages (`docker login ghcr.io`), or make the package public in its GitHub
+settings.
+
+To build the editor locally instead:
 
 ```bash
 docker build -t code-oss-container:local ./code-oss
 UI_IMAGE=code-oss-container:local docker compose up -d
 ```
+
+The gateway follows the same pattern. Compose builds it when the image is not
+present locally, and `GATEWAY_IMAGE=ahp-stack-gateway:local docker compose up
+--build` keeps a local build instead of the published one.
 
 Everything starts without credentials. Agents appear in the picker, and a
 session fails only when it reaches a model. To use them, copy `.env.example` to
@@ -136,8 +152,12 @@ The build clones `microsoft/vscode` at the tag and commit pinned in the
 Dockerfile, asserts the checkout matches, adjusts the chat endpoints in
 `product.json`, and runs upstream's web build. The runtime stage is nginx with
 the compiled bundle and no toolchain. A cold build takes about an hour and needs
-around 20 GiB of disk. CI builds both architectures and pushes them to the
-registry.
+around 20 GiB of disk.
+
+CI builds both images for `linux/amd64` and `linux/arm64` and pushes them to the
+GitHub registry, the editor from `container.yml` and the gateway from
+`gateway.yml`. The gateway version comes from the ARG in its Dockerfile, so
+bumping that value publishes `0.2.3` alongside `latest`.
 
 ## Licensing and trademarks
 
