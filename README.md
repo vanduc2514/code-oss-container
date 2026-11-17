@@ -27,9 +27,8 @@ docker compose pull
 docker compose up -d
 ```
 
-If the gateway package is still private, log in first with a token that can read
-packages (`docker login ghcr.io`), or make the package public in its GitHub
-settings.
+The gateway package is public for anonymous pulls. If you switch it to private,
+run `docker login ghcr.io` with a token that can read packages before pulling.
 
 To build the editor locally instead:
 
