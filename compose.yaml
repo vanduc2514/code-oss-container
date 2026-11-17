@@ -1,0 +1,117 @@
+# Example deployment of the two images in this repository. This file is a
+# starting point, not a production configuration: it publishes the gateway port
+# and uses a placeholder token so `docker compose up -d` works immediately.
+#
+# Neither image depends on compose. Any orchestrator can run them with the same
+# environment variables; see README.md.
+name: ahp-stack
+
+services:
+  # Init service: installs the agents into a shared volume once, so the gateway
+  # image stays free of agent binaries. It is idempotent and skips work when the
+  # recorded versions already match.
+  agents:
+    image: ${AGENTS_IMAGE:-node:24-bookworm-slim}
+    restart: "no"
+    environment:
+      PI_ACP_VERSION: ${PI_ACP_VERSION:-0.0.34}
+      PI_VERSION: ${PI_VERSION:-1.5.0}
+      COPILOT_VERSION: ${COPILOT_VERSION:-1.0.107}
+      AGY_VERSION: ${AGY_VERSION:-1.5.3}
+    volumes:
+      - agents:/opt/agents
+      # Optional host copy of the Antigravity CLI. Point AGY_BIN at the agy
+      # binary to have it installed into the volume; /dev/null means skip.
+      - ${AGY_BIN:-/dev/null}:/opt/agy-source:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        want="pi-acp@$$PI_ACP_VERSION pi@$$PI_VERSION copilot@$$COPILOT_VERSION agy@$$AGY_VERSION"
+        marker=/opt/agents/.installed
+        if [ -f "$$marker" ] && [ "$$(cat "$$marker")" = "$$want" ]; then
+          echo "[agents] up to date: $$want"
+        else
+          mkdir -p /opt/agents/bin
+          npm install --prefix /opt/agents --no-audit --no-fund \
+            --cache /opt/agents/.npm-cache \
+            "pi-acp@$$PI_ACP_VERSION" \
+            "@earendil-works/pi-coding-agent@$$PI_VERSION" \
+            "@github/copilot@$$COPILOT_VERSION"
+          if [ -f /opt/agy-source ]; then
+            install -m 0755 /opt/agy-source /opt/agents/bin/agy
+            if /opt/agents/bin/agy --version >/dev/null 2>&1; then
+              echo "[agents] installed agy $$(/opt/agents/bin/agy --version 2>/dev/null | head -1)"
+            else
+              echo "[agents] warning: agy copied but cannot run here; AGY_BIN must be a linux binary for this architecture" >&2
+            fi
+          else
+            echo "[agents] no agy binary mounted; antigravity stays unavailable"
+          fi
+          printf '%s' "$$want" > "$$marker"
+        fi
+        ls /opt/agents/node_modules/.bin | tr '\n' ' '; echo
+
+  gateway:
+    build:
+      context: ./gateway
+      args:
+        GATEWAY_VERSION: ${AHP_GATEWAY_VERSION:-0.2.2}
+    image: ahp-stack-gateway:${AHP_GATEWAY_VERSION:-0.2.2}
+    restart: unless-stopped
+    stop_grace_period: 15s
+    environment:
+      # The mounted file is native ahp-acp-gateway configuration and is used
+      # unchanged. Provider processes inherit these variables, so credentials
+      # can stay here instead of in the file. Empty is allowed: the gateway
+      # starts, but pi and the BYOK providers cannot reach a model until a key
+      # is set or a login is stored.
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      COPILOT_GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:-}
+    volumes:
+      # Native gateway configuration. Copy gateway.example.json, edit
+      # it, then point AHP_GATEWAY_CONFIG at your copy.
+      - ${AHP_GATEWAY_CONFIG:-./gateway.example.json}:/etc/ahp/gateway.json:ro
+      - gateway-data:/data
+      - gateway-workspace:/workspace
+      # Agents installed by the init service; mounted read-only here.
+      - agents:/opt/agents:ro
+      - copilot-auth:/home/node/.copilot
+      - pi-home:/home/node/.pi
+    # Published so the example works with any Code - OSS image. Keep the
+    # browser-facing address in config.json in sync with AHP_GATEWAY_PORT.
+    ports:
+      - "${AHP_GATEWAY_PORT:-8765}:8765"
+    depends_on:
+      agents:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
+  ui:
+    # Use the published image, or build one from this repository with
+    # `docker build -t code-oss-container:local ./code-oss` and set UI_IMAGE.
+    image: ${UI_IMAGE:-ghcr.io/vanduc2514/code-oss-container:latest}
+    restart: unless-stopped
+    volumes:
+      # Agent-host list. The default file points the browser at the published
+      # gateway port above; its connectionToken must match AHP_AUTH_TOKEN.
+      - ${AHP_CONFIG_FILE:-./agent-hosts.example.json}:/usr/share/nginx/html/config.json:ro
+    ports:
+      - "${UI_PORT:-9000}:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+      - default
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  gateway-data:
+  gateway-workspace:
+  agents:
+  copilot-auth:
+  pi-home:

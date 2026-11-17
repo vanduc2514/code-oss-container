@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "listener": {
+    "host": "0.0.0.0",
+    "port": 8765,
+    "path": "/ahp",
+    "tlsTerminated": true,
+    "allowAnyOrigin": true,
+    "allowedOrigins": []
+  },
+  "auth": {
+    "token": "example-token-change-me"
+  },
+  "database": {
+    "path": "/data/ahp-acp-gateway.db"
+  },
+  "replay": {
+    "maxActions": 10000
+  },
+  "providerDefaults": {
+    "startupTimeoutMs": 120000,
+    "requestTimeoutMs": 300000,
+    "shutdownTimeoutMs": 5000,
+    "stderrTailBytes": 16384
+  },
+  "providers": [
+    {
+      "id": "copilot",
+      "enabled": true,
+      "displayName": "Copilot (GitHub)",
+      "description": "GitHub Copilot CLI over ACP.",
+      "command": "copilot",
+      "args": [
+        "--acp"
+      ],
+      "cwd": "/workspace",
+      "env": {
+        "COPILOT_AUTO_UPDATE": "false"
+      },
+      "startupTimeoutMs": 120000
+    },
+    {
+      "id": "copilot-byok-pro",
+      "enabled": true,
+      "displayName": "Copilot - DeepSeek V4 Pro",
+      "description": "GitHub Copilot CLI with deepseek-v4-pro via BYOK.",
+      "command": "copilot",
+      "args": [
+        "--acp"
+      ],
+      "cwd": "/workspace",
+      "env": {
+        "COPILOT_AUTO_UPDATE": "false",
+        "COPILOT_PROVIDER_TYPE": "openai",
+        "COPILOT_PROVIDER_BASE_URL": "https://api.deepseek.com/v1",
+        "COPILOT_PROVIDER_API_KEY_COMMAND": "printenv DEEPSEEK_API_KEY",
+        "COPILOT_PROVIDER_MAX_PROMPT_TOKENS": "900000",
+        "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS": "32768",
+        "COPILOT_MODEL": "deepseek-v4-pro"
+      },
+      "startupTimeoutMs": 120000
+    },
+    {
+      "id": "copilot-byok-flash",
+      "enabled": true,
+      "displayName": "Copilot - DeepSeek Flash",
+      "description": "GitHub Copilot CLI with deepseek-flash via BYOK.",
+      "command": "copilot",
+      "args": [
+        "--acp"
+      ],
+      "cwd": "/workspace",
+      "env": {
+        "COPILOT_AUTO_UPDATE": "false",
+        "COPILOT_PROVIDER_TYPE": "openai",
+        "COPILOT_PROVIDER_BASE_URL": "https://api.deepseek.com/v1",
+        "COPILOT_PROVIDER_API_KEY_COMMAND": "printenv DEEPSEEK_API_KEY",
+        "COPILOT_PROVIDER_MAX_PROMPT_TOKENS": "900000",
+        "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS": "32768",
+        "COPILOT_MODEL": "deepseek-flash"
+      },
+      "startupTimeoutMs": 120000
+    },
+    {
+      "id": "pi",
+      "enabled": true,
+      "displayName": "Pi ACP",
+      "description": "Upstream pi coding agent over pi-acp.",
+      "command": "pi-acp",
+      "args": [],
+      "cwd": "/workspace",
+      "startupTimeoutMs": 120000
+    },
+    {
+      "id": "antigravity",
+      "enabled": true,
+      "displayName": "Antigravity",
+      "description": "Google Antigravity CLI native ACP server (agy acp).",
+      "command": "agy",
+      "args": [
+        "acp"
+      ],
+      "cwd": "/workspace",
+      "startupTimeoutMs": 120000,
+      "requestTimeoutMs": 1800000,
+      "installHint": "Provide the agy binary through AGY_BIN so the init service installs it.",
+      "authHint": "Sign in with the Antigravity CLI once; its state lives in the pi-home volume."
+    },
+    {
+      "id": "claude",
+      "enabled": false
+    },
+    {
+      "id": "gemini",
+      "enabled": false
+    },
+    {
+      "id": "qwen",
+      "enabled": false
+    },
+    {
+      "id": "auggie",
+      "enabled": false
+    },
+    {
+      "id": "qoder",
+      "enabled": false
+    },
+    {
+      "id": "codex",
+      "enabled": false
+    },
+    {
+      "id": "opencode",
+      "enabled": false
+    },
+    {
+      "id": "openclaw",
+      "enabled": false
+    },
+    {
+      "id": "kiro",
+      "enabled": false
+    },
+    {
+      "id": "hermes",
+      "enabled": false
+    },
+    {
+      "id": "kimi",
+      "enabled": false
+    }
+  ]
+}

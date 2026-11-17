@@ -1,313 +1,148 @@
 # Code - OSS web container
 
-A self-hosted web UI for **Code - OSS**, the open source project behind VS Code,
-built from upstream source at tag `1.145.2`
-(commit `c4453f8ea430795f941c1b2ff6c9321135a74a02`) and served by nginx.
+This repository runs a self-hosted copy of the Code - OSS web IDE and its Agents
+Window, together with the piece that makes the window usable: an Agent Host
+Protocol (AHP) gateway that starts coding agents and streams them to the browser.
+Two images do the work: one serves the editor as static files, the other runs the
+gateway that owns sessions and the agent processes. Compose wires them together as
+a working starting point rather than a hardened production setup.
 
-The image lives under [`code-oss/`](code-oss) and is built by one multi-stage
-Dockerfile: the build stage clones and compiles upstream, the runtime stage
-serves the result with nginx and contains no toolchain or upstream checkout.
-Build-time code lives in `code-oss/build/`, runtime files in `code-oss/runtime/`.
-The repository root adds `compose.yaml`, an example deployment with a private
-AHP gateway. Before compiling,
-[`patch-product.mjs`](code-oss/build/patch-product.mjs) rewrites the chat-agent
-endpoints in the checked-out `product.json`; see [Build](#build).
-
-- `/` — the Code - OSS web workbench (`vs/workbench/workbench.web.main.internal`)
-- `/agents` — the Agents Window (`vs/sessions/sessions.web.main.internal`)
-
-## Repository layout
-
-```
-code-oss/
-  Dockerfile              multi-stage: compile upstream, then nginx runtime
-  build/
-    patch-product.mjs     build-time product.json rewrite
-    nginx-routes/         Go helper: config.json -> nginx proxy routes
-  runtime/
-    index.html            workbench shell
-    agents.html           Agents Window shell
-    index.js              workbench entry point module
-    agents.js             Agents Window entry point module
-    shell.js              helpers shared by both entry points
-    nginx.conf.template   rendered by envsubst at container start
-    25-nginx-routes.sh    entrypoint wrapper that runs the Go helper
-                          (version.js is generated into the image at build time)
-gateway/                  AHP gateway image: pi, Copilot, BYOK providers
-compose.yaml              example ui + gateway deployment
-config.example.json       example agent-host list, mounted at /config.json
-.env.example              example stack configuration
-.github/workflows/container.yml
-README.md
-```
-
-## Why the shells exist
-
-The upstream `web` build target (`npm run gulp vscode-web-min-ci`) emits
-JavaScript and CSS only — no HTML. Microsoft's own pages at vscode.dev are
-external shells. This project therefore authors two small pages plus their entry
-point modules, following the same structure as upstream's own development
-shells.
-
-Both shells:
-
-- load `out/nls.messages.js` as a classic script, then set
-  `globalThis._VSCODE_FILE_ROOT` from their entry point module before importing
-  the workbench bundle, which upstream requires;
-- keep their boot logic in separate entry point modules, so the large
-  `productConfiguration` object reads as JavaScript instead of an inline script;
-- pass a `productConfiguration` using Code - OSS naming, `enableTelemetry: false`,
-  and the Open VSX gallery (never a Microsoft service);
-- load `extensions/theme-defaults` and `extensions/theme-seti` as additional
-  builtin extensions so the UI is themed;
-- fetch `/config.json` at boot and use it for `chat.remoteAgentHosts`.
-
-`agents.html` also sets the `skip-sessions-welcome` query parameter, the same
-signed-out escape hatch upstream's `scripts/code-sessions-web.js --skip-welcome`
-uses, so the window opens without a GitHub sign-in.
-
-## Image
-
-```
-ghcr.io/vanduc2514/code-oss-container:1.145.2
-ghcr.io/vanduc2514/code-oss-container:latest
-ghcr.io/vanduc2514/code-oss-container:c4453f8ea430795f941c1b2ff6c9321135a74a02
-```
-
-`linux/amd64` and `linux/arm64`, published as one manifest.
-
-## Run
+## Quickstart
 
 ```bash
-docker run --rm -d --name code-oss -p 9000:80 \
-  -v "$PWD/config.json:/usr/share/nginx/html/config.json:ro" \
-  ghcr.io/vanduc2514/code-oss-container:1.145.2
-```
-
-Open <http://localhost:9000/> and <http://localhost:9000/agents>.
-Health endpoint: `GET /healthz`.
-
-Agent hosts come only from the mounted `config.json`; without the mount the UI
-starts with no hosts. See [Agent hosts (AHP)](#agent-hosts-ahp) for the file
-format.
-
-## Full stack: Agents UI + AHP gateway
-
-`compose.yaml` is an example deployment of the two images in this repository:
-the Code - OSS image and the `gateway/` image, which hosts `pi`, the GitHub
-Copilot CLI, and the Copilot BYOK providers. Both images are generic; compose
-only wires the environment variables. Only the UI is published, and the gateway
-is reachable inside the deployment network.
-
-Build the UI image locally, or use the published one:
-
-```bash
-docker build -t code-oss-container:local ./code-oss
-```
-
-Then deploy:
-
-```bash
-cp config.example.json config.json   # edit address and connectionToken
-cp .env.example .env                 # set AHP_CONFIG_FILE, AHP_AUTH_TOKEN,
-                                     # DEEPSEEK_API_KEY, COPILOT_GITHUB_TOKEN
 docker compose up -d
 ```
 
-- `ui` serves `/` and `/agents` on <http://localhost:9000> and proxies
-  `ws://<host>/ahp` to the `upstream` in `config.json`. `UI_IMAGE` names the
-  Code - OSS image (for example `code-oss-container:local` after the build).
-- `gateway` renders `gateway.json` from `AHP_*` variables at startup and keeps
-  its SQLite database, pi state, and Copilot login in named volumes.
-- `config.json` is mounted read-only at `/usr/share/nginx/html/config.json` and
-  points the browser at the proxy. Its `connectionToken` must match
-  `AHP_AUTH_TOKEN`. The image ships no default file.
+Open <http://localhost:9000> for the editor and <http://localhost:9000/agents>
+for the Agents Window. The first run builds the gateway image, installs pi and
+GitHub Copilot into a volume, and starts the stack. Ports 9000 and 8765 must be
+free.
 
-Traefik (or any TLS proxy) terminates TLS and forwards HTTP and WebSocket
-upgrades to the published UI port. Put the public address in the mounted
-`config.json`, for example `wss://agents.example.com/ahp`.
-
-The gateway requires `AHP_AUTH_TOKEN` because it binds a non-loopback address.
-The same value goes into the browser's `config.json` as `connectionToken` and is
-sent as the `?token=` query parameter, so protect the UI port with the proxy or
-network policy.
-
-Provider, secret, and Copilot login details: [gateway/README.md](gateway/README.md).
-
-Standalone runs of the image do not include the gateway; they use whatever AHP
-hosts you mount in `config.json`.
-
-## Agent hosts (AHP)
-
-The Agents Window talks to Agent Host Protocol servers over WebSocket. The UI is
-host-agnostic: any AHP host that advertises models works, and hosts are supplied
-at runtime, not baked into the image.
-
-```jsonc
-// /usr/share/nginx/html/config.json
-{
-  "remoteAgentHosts": [
-    { "name": "my-host", "address": "wss://ui.example.com/ahp/my-host", "connectionToken": "optional" }
-  ]
-}
-```
-
-Mount your own file:
+The UI comes from `ghcr.io/vanduc2514/code-oss-container`. To build it yourself
+instead:
 
 ```bash
-docker run --rm -d --name code-oss -p 9000:80 \
-  -v "$PWD/config.json:/usr/share/nginx/html/config.json:ro" \
-  ghcr.io/vanduc2514/code-oss-container:1.145.2
+docker build -t code-oss-container:local ./code-oss
+UI_IMAGE=code-oss-container:local docker compose up -d
 ```
 
-The image ships no `config.json`. Without the mount, `/config.json` returns 404
-and both shells start with no agent hosts.
+Everything starts without credentials. Agents appear in the picker, and a
+session fails only when it reaches a model. To use them, copy `.env.example` to
+`.env` and fill in what you have:
 
-`/config.json` is served `Cache-Control: no-store`, so a page reload picks up
-changes without rebuilding or restarting.
-
-### Proxy-only fields
-
-An entry can instead name a private upstream. The container then proxies that
-host, and the browser only ever connects to this origin:
-
-```jsonc
-// /usr/share/nginx/html/config.json
-{
-  "remoteAgentHosts": [
-    { "name": "AHP Gateway", "path": "/ahp", "upstream": "http://gateway:8765/ahp", "connectionToken": "..." },
-    { "name": "team-a",      "path": "/ahp/team-a", "upstream": "http://gateway-a.private:8765/ahp" },
-    { "name": "external",    "address": "wss://agents.example.com/ahp" }
-  ]
-}
+```dotenv
+DEEPSEEK_API_KEY=sk-...
+COPILOT_GITHUB_TOKEN=github_pat_...
 ```
 
-| Field | Meaning |
-|---|---|
-| `name` | Display name |
-| `path` | Same-origin path, used as the browser address when `address` is absent |
-| `upstream` | Private URL the container proxies to; absent means the browser dials `address` directly |
-| `address` | Explicit browser-facing URL; wins over `path` |
-| `connectionToken` | Token sent as `?token=` |
+The gateway and the browser share a token so the browser can authenticate. The
+example uses `example-token-change-me`, which lives in `gateway.example.json` and
+`agent-hosts.example.json`. Change both together before the stack is reachable
+from anywhere but your machine. The commented variables in `.env.example` cover
+ports, file paths, and image pins and are optional.
 
-At container start, the [`nginx-routes`](code-oss/build/nginx-routes) helper
-reads the file and writes one self-contained nginx location per entry that has
-an `upstream`, using `path` or a slug of `name`:
+## How the pieces talk
 
-```nginx
-location = /ahp/team-a {
-	access_log off;
-	proxy_pass http://gateway-a.private:8765/ahp;   # /ahp/team-a becomes /ahp
-	proxy_http_version 1.1;
-	proxy_set_header Upgrade $http_upgrade;
-	# ...upgrade headers and long read/send timeouts
-}
+Only the port 9000 container is published. It serves the editor files and hands
+the browser a `/config.json` listing agent hosts. When a host entry names a
+private upstream, that container also proxies the WebSocket, so the browser never
+resolves an internal name.
+
+The gateway listens on 8765, keeps sessions in SQLite, and spawns one process per
+agent session. It speaks ACP over stdin and stdout to each agent, and AHP over
+WebSocket to the browser. Model calls happen inside the agent process, so keys
+stay on the gateway host and never reach the page.
+
+A short-lived init service installs the agents, so the gateway image holds only
+the gateway and Node. Agent versions and their large binaries stay out of the
+image, and you change them by editing `.env` and restarting.
+
+## Deployment architecture
+
+A typical deployment is one Linux host with Docker, a TLS proxy such as Traefik
+in front, and browsers somewhere else. Traefik terminates TLS and forwards HTTP
+and WebSocket upgrades to the UI container on port 9000. The gateway stays on the
+private compose network or, if you keep it published, on 8765 without TLS of its
+own. Removing the `ports:` entry for the gateway is enough to keep it off the
+host network, but then the UI has to proxy to it, which needs a UI image built
+from this repository. The published tags predate that proxy helper.
+
+The address in the agent host file is what the browser dials, so it has to match
+how you expose the stack: `ws://localhost:8765/ahp` for a local run,
+`ws://<host>:8765/ahp` when the gateway port is published, or
+`wss://<domain>/ahp` behind the TLS proxy.
+
+State lives in named volumes. `gateway-data` holds sessions and transcripts,
+`gateway-workspace` is the directory agents read and write, `agents` holds the
+installed agent binaries, and `copilot-auth` and `pi-home` keep logins so a
+recreated container does not ask again. Credentials stay in `.env` or in a
+secrets manager; nothing in this repository expects a key in an image or in a
+config file.
+
+## Customizing
+
+The gateway reads one file, mounted at `/etc/ahp/gateway.json`. It is native
+`ahp-acp-gateway` configuration and is passed through untouched, so any field that
+gateway supports works here. Copy the example and point the stack at your copy:
+
+```bash
+cp gateway.example.json gateway.json
+# set AHP_GATEWAY_CONFIG=./gateway.json in .env
+docker compose up -d gateway
 ```
 
-So adding a host is a `config.json` edit plus a restart; no nginx files to
-write. Invalid paths or upstreams abort startup with an error rather than
-producing a broken configuration.
+Each provider entry says what to run, in which directory, with which environment
+and timeouts. The example enables GitHub Copilot, two Copilot sessions pointed at
+DeepSeek, pi, and Antigravity. Adding a model to Copilot means copying a BYOK
+entry and changing the base URL, model, and key command. Adding a different agent
+means adding an entry whose command names a binary installed in the `agents`
+volume. Disabled entries at the bottom of the file are the gateway's built-in
+providers; delete the `enabled: false` line to use one, keeping in mind that its
+package then has to be installed.
 
-The browser never resolves a private name, and `shell.js` passes only `name`,
-`address`, and `connectionToken` to the workbench. The mounted file itself is
-still served over HTTP, so anyone who can read `/config.json` can see the
-`upstream` values; they are harmless unless reachable from outside the private
-network.
+Check a change before restarting the container:
 
-The ingress in front of this container must forward WebSocket upgrades on these
-paths, the same as for `/ahp`.
+```bash
+docker compose exec gateway \
+  ahp-acp-gateway --config /etc/ahp/gateway.json --print-config
+```
 
-Notes:
+The init service installs pinned versions of `pi-acp`, `pi`, and the Copilot CLI.
+Versions come from `.env`. Antigravity is the exception: its CLI is a native
+binary from Google, not an npm package, so put a Linux build on the host and set
+`AGY_BIN` to its path. Without it the service logs that Antigravity is
+unavailable and everything else still works.
 
-- A Copilot-backed host (`copilotcli`) requires a GitHub credential *from the
-  browser* to start a session, regardless of the host's own sign-in. Non-Copilot
-  hosts do not.
-- `chat.allowAnonymousAccess` is enabled in both shells, which keeps the
-  signed-out UI from demanding a sign-in before a harness is selectable.
+Logins persist in volumes. If you prefer an interactive login over an API token:
 
-## Build
+```bash
+docker compose exec gateway copilot login --device-code
+docker compose exec gateway pi
+```
 
-One multi-stage Dockerfile builds everything:
+The agent host file is separate from the gateway file and only concerns the
+browser. An entry with `address` connects directly. An entry with `path` and
+`upstream` makes the UI container proxy to a private host, and the generated
+nginx route uses `path` or a slug of `name`. Tokens go in `connectionToken` and
+must match `auth.token` in the gateway file.
+
+## Building the editor image
 
 ```bash
 docker build -t code-oss-container ./code-oss
 ```
 
-The `routes` stage cross-compiles the small Go helper that generates the `/ahp`
-proxy locations at container start, for the target architecture. Its tests run
-without Docker:
-
-```bash
-cd code-oss/build/nginx-routes && go test ./...
-```
-
-The `build` stage runs on the host architecture (the web bundle is platform
-independent) and mirrors Microsoft's own web pipeline
-(`build/azure-pipelines/web/product-build-web.yml`):
-
-1. clones `microsoft/vscode` at the `VSCODE_TAG` build arg and asserts the
-   checked-out commit equals `VSCODE_COMMIT`;
-2. rewrites the chat-agent endpoints in `product.json` with
-   [`patch-product.mjs`](code-oss/build/patch-product.mjs), because several
-   workbench code paths read the build-time product object instead of
-   `IProductService` and would otherwise still call `aka.ms` and
-   `api.github.com` when chat setup runs;
-3. runs `npm ci`, `npm run gulp core-ci`, `npm run gulp vscode-web-min-ci`.
-
-The `runtime` stage is `nginx:alpine` plus the compiled bundle, the shells, and
-upstream's attribution files. It also writes `version.js` from the same
-`VSCODE_TAG`/`VSCODE_COMMIT` build args, which both shells import as their
-`version` and `commit`, so the pin is declared once. No Node.js, compiler, or upstream checkout ships
-in the final image. It reads no runtime environment variables: agent hosts and
-proxy targets come entirely from the mounted `config.json`.
-
-The `VSCODE_TAG` and `VSCODE_COMMIT` ARGs in the Dockerfile are the single
-version pin, and CI reads them to tag the published image. To build another
-release:
-
-```bash
-docker build \
-  --build-arg VSCODE_TAG=1.146.0 \
-  --build-arg VSCODE_COMMIT=<sha> \
-  -t code-oss-container:1.146.0 ./code-oss
-```
-
-A cold build takes roughly 45-60 minutes and 20 GiB of disk. BuildKit caches the
-expensive stage, and CI persists that cache with `type=gha`.
-
-One build-time detail: the build stage defines
-`CFLAGS`/`CXXFLAGS='-UV8_DEPRECATION_WARNINGS -UV8_IMMINENT_DEPRECATION_WARNINGS'`
-because some GCC versions cannot parse the Electron 43 V8 headers while those
-macros are defined. This only silences deprecated-API warnings in native module
-builds.
-
-### CI
-
-A `test` job runs `go test ./...` for the route helper with the Go version from
-its `go.mod`, and the image build waits for it.
-
-The `build` job reads the pin from the Dockerfile, frees runner disk, then
-builds and pushes the multi-arch image with `docker/build-push-action`, taking
-tags and OCI labels from `docker/metadata-action` and caching the build stage in
-GitHub Actions.
-
-The workflow does not run the image. Verify a build before relying on it:
-
-```bash
-docker run --rm -d --name code-oss -p 9000:80 \
-  -v "$PWD/config.json:/usr/share/nginx/html/config.json:ro" \
-  ghcr.io/vanduc2514/code-oss-container:1.145.2
-curl -fsS http://127.0.0.1:9000/healthz
-```
+The build clones `microsoft/vscode` at the tag and commit pinned in the
+Dockerfile, asserts the checkout matches, adjusts the chat endpoints in
+`product.json`, and runs upstream's web build. The runtime stage is nginx with
+the compiled bundle and no toolchain. A cold build takes about an hour and needs
+around 20 GiB of disk. CI builds both architectures and pushes them to the
+registry.
 
 ## Licensing and trademarks
 
-- Upstream Code - OSS is MIT licensed. The image ships upstream's `LICENSE.txt`
-  and `ThirdPartyNotices.txt` at the web root for attribution.
-- The product identity here is **Code - OSS**, not Visual Studio Code. The
-  shells use Code - OSS names, disable telemetry, and point extensions at Open
-  VSX rather than any Microsoft gallery or service.
-- No Microsoft logo, icon, or product name is used, and nothing is presented as
-  an official Microsoft build.
-- VS Code and Visual Studio are trademarks of Microsoft. This project is not
-  affiliated with or endorsed by Microsoft.
+Upstream Code - OSS is MIT licensed, and the image ships its `LICENSE.txt` and
+`ThirdPartyNotices.txt`. The product identity here is Code - OSS: telemetry is
+off, extensions come from Open VSX, and no Microsoft service is contacted. VS
+Code and Visual Studio are trademarks of Microsoft, and this project is not
+affiliated with or endorsed by Microsoft.

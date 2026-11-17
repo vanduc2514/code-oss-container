@@ -1,0 +1,9 @@
+{
+  "remoteAgentHosts": [
+    {
+      "name": "AHP Gateway",
+      "address": "ws://localhost:8765/ahp",
+      "connectionToken": "example-token-change-me"
+    }
+  ]
+}
